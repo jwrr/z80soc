@@ -32,6 +32,7 @@ from cocotb.scoreboard import Scoreboard
 #   input                 clk,
 #   input                 reset_n,
 #   input                 ce_n,
+#   input                 cs,
 #   input                 m1_n,
 #   input                 rd_n,
 #   input                 iorq_n,
@@ -42,7 +43,7 @@ from cocotb.scoreboard import Scoreboard
 #   output                ieo,
 #   output                int_n,
 #
-#   input                 clk_trig,
+#   input                 clk_trg,
 #   output                zc_to
 
 
@@ -51,6 +52,7 @@ async def z80write(dut, addr, wdata):
     dut.rd_n = 1
     dut.m1_n = 1
     dut.ce_n = 0
+    dut.cs   = addr;
     await RisingEdge(dut.clk)
     dut.iorq_n = 0
     dut.din = wdata
@@ -61,6 +63,7 @@ async def z80write(dut, addr, wdata):
     dut.rd_n = 1
     dut.m1_n = 1
     dut.ce_n = 1
+    dut.cs   = 0
     await RisingEdge(dut.clk)
 
 
@@ -69,6 +72,7 @@ async def z80read(dut, addr):
     dut.rd_n = 1
     dut.m1_n = 1
     dut.ce_n = 0
+    dut.cs   = addr;
     await RisingEdge(dut.clk)
     dut.iorq_n = 0
     dut.rd_n = 0
@@ -81,6 +85,7 @@ async def z80read(dut, addr):
     dut.rd_n = 1
     dut.m1_n = 1
     dut.ce_n = 1
+    dut.cs   = 0
     await RisingEdge(dut.clk)
     return rdata
 
@@ -101,7 +106,7 @@ async def run_test(dut):
     dut.iorq_n = 1
     dut.din = 0
     dut.iei = 0
-    dut.clk_trig = 0
+    dut.clk_trg = 0
 
     await ClockCycles(dut.clk,100)
 
@@ -113,17 +118,17 @@ async def run_test(dut):
     ### Register RW TEST
 
     if en_reg_rw_test:
-        dv = DVTest(dut, "GPIO Loopback", msg_lvl="All")
-        dv.info("GPIO Loopback Test")
+        dv = DVTest(dut, "CTC TIMER TEST", msg_lvl="All")
 
         for i in range(1, 101, 10):
-            await z80write(dut, 0x1, 0x15)
+            await z80write(dut, 0x1, 0x05)
             await z80write(dut, 0x1, i)
 
         for i in range(100):
             await ClockCycles(dut.clk,100)
             rdata = await z80read(dut, 0x1)
             print("cnt = {}".format(rdata))
+        dv.done()
             
     await ClockCycles(dut.clk,100)
 

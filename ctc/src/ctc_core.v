@@ -23,6 +23,7 @@ module ctc_core #(
   input                 clk,
   input                 reset_n,
   input                 ce_n,
+  input                 cs,
   input                 m1_n,
   input                 rd_n,
   input                 iorq_n,
@@ -33,7 +34,7 @@ module ctc_core #(
   output                ieo,
   output                int_n,
 
-  input                 clk_trig,
+  input                 clk_trg,
   output                zc_to
 );
 
@@ -42,78 +43,77 @@ module ctc_core #(
   reg                   ieo;
   reg                   int_n;
 
-  reg        [DWID-1:0] ctrl_reg;
-  wire                  ctrl1_sw_rst      =  ctrl_reg[1];
-  wire                  ctrl3_auto_trig   = ~ctrl_reg[3];
-  wire                  ctrl3_ext_trig    =  ctrl_reg[3];
-  wire                  ctrl4_trig_fe     = ~ctrl_reg[4];
-  wire                  ctrl4_trig_re     =  ctrl_reg[4];
-  wire                  ctrl5_prescale16  = ~ctrl_reg[5]; // timer mode only
-  wire                  ctrl5_prescale256 =  ctrl_reg[5]; // timer mode only
-  wire                  ctrl6_tim_mode    = ~ctrl_reg[6];
-  wire                  ctrl6_cnt_mode    =  ctrl_reg[6];
-  wire                  ctrl7_int_en      =  ctrl_reg[7];
-  
-  wire            [7:0] prescale_val      = ctrl5_prescale16 ? 8'h0F : 8'hFF;
+  reg        [DWID-1:0] channel_control_word;
+  wire                  ccw1_sw_rst      =  channel_control_word[1];
+  wire                  ccw3_auto_trig   = !channel_control_word[3];
+  wire                  ccw3_ext_trig    =  channel_control_word[3];
+  wire                  ccw4_trig_fe     = !channel_control_word[4];
+  wire                  ccw4_trig_re     =  channel_control_word[4];
+  wire                  ccw5_prescale16  = !channel_control_word[5]; // timer mode only
+  wire                  ccw5_prescale256 =  channel_control_word[5]; // timer mode only
+  wire                  ccw6_tim_mode    = !channel_control_word[6];
+  wire                  ccw6_cnt_mode    =  channel_control_word[6];
+  wire                  ccw7_int_en      =  channel_control_word[7];
 
-  reg        [DWID-1:0] tc_reg;
-  reg        [DWID-1:0] cnt;
-  reg             [7:0] cnt_prescale;
-  reg        [DWID-1:0] vec_reg;
-  reg                   clk_trig2;
-  reg                   clk_trig_re;
-  reg                   clk_trig_fe;
+  wire            [7:0] prescaler_factor = ccw5_prescale16 ? 8'h0F : 8'hFF;
 
-  wire                  we1 = rd_n & ~iorq_n & ~ce_n & m1_n;
+  reg        [DWID-1:0] time_constant_word;
+  reg        [DWID-1:0] down_counter;
+  reg             [7:0] prescaler_counter;
+  reg        [DWID-1:0] interrupt_vector_word;
+  reg                   clk_trg2;
+  reg                   clk_trg_re;
+  reg                   clk_trg_fe;
+
+  wire                  we1 = cs && rd_n && !iorq_n && !ce_n && m1_n;
   reg                   we2;
-  wire                  wstb = we1 & ~we2;
-  reg                   tc_next;
-  wire                  tc_wstb   = wstb & tc_next;
-  wire                  ctrl_wstb = wstb & din[0] & ~tc_next;
-  wire                  vec_wstb  = wstb & ~din[0] & ~tc_next;
-  reg                   tim_tc_start;
+  wire                  wstb = we1 && !we2;
+  reg                   time_constant_to_follow;
+  wire                  tc_wstb  = wstb && time_constant_to_follow;
+  wire                  ccw_wstb = wstb && din[0] && !time_constant_to_follow;
+  wire                  vec_wstb = wstb && !din[0] && !time_constant_to_follow;
+  reg                   trig_on_time_constant_load;
 
-
-  wire                  rd1 = ~rd_n & ~iorq_n & ~ce_n & m1_n;
+  wire                  rd1 = cs && !rd_n && !iorq_n && !ce_n && m1_n;
   reg                   rd2;
 
-  reg                   ctrl4_trig_re2;
-  wire                  sw_trig = ctrl4_trig_re != ctrl4_trig_re2;
+  reg                   ccw4_trig_re2;
+  wire                  sw_trig = ccw4_trig_re != ccw4_trig_re2;
 
-  wire                  trig_ld_en = ~ctrl_reg[3];
-  wire                  trig_re_en =  ctrl_reg[3] &  ctrl_reg[4];
-  wire                  trig_fe_en =  ctrl_reg[3] & ~ctrl_reg[4];
-  reg                   trig;
+  wire                  trig_re_en = ccw3_ext_trig && ccw4_trig_re;
+  wire                  trig_fe_en = ccw3_ext_trig && ccw4_trig_fe;
+  reg                   trigger_pulse;
   reg                   triggered;
   reg                   zc_to;
 
   always @(posedge clk or negedge reset_n) begin
-    if (~reset_n) begin
-      we2            <= 1'b0;
-      rd2            <= 1'b0;
-      dout           <= 'h0;
-      ctrl_reg       <= 'h0;
-      tc_reg         <= 'h0;
-      oe_n           <= 1'b1;
-      ieo            <= 1'b0;
-      int_n          <= 1'b0;
-      tc_next        <= 1'b0;
-      clk_trig2      <= 1'b0;
-      clk_trig_re    <= 1'b0;
-      clk_trig_fe    <= 1'b0;
-      tim_tc_start   <= 1'b0;
-      trig           <= 1'b0;
-      cnt            <= 'h0;
-      cnt_prescale   <= 8'h0;
-      triggered      <= 1'b0;
-      ctrl4_trig_re2 <= 1'b0;
-      zc_to          <= 1'b0;
-    end else begin
+    if (!reset_n) begin
+      we2                        <= 1'b0;
+      rd2                        <= 1'b0;
+      dout                       <= 'h0;
+      channel_control_word       <= 'h0;
+      time_constant_word         <= 'h0;
+      time_constant_to_follow    <= 1'b0;
+      oe_n                       <= 1'b1;
+      ieo                        <= 1'b0;
+      int_n                      <= 1'b0;
+      clk_trg2                   <= 1'b0;
+      clk_trg_re                 <= 1'b0;
+      clk_trg_fe                 <= 1'b0;
+      trig_on_time_constant_load <= 1'b0;
+      trigger_pulse              <= 1'b0;
+      down_counter               <= 'h0;
+      prescaler_counter          <= 8'h0;
+      triggered                  <= 1'b0;
+      ccw4_trig_re2              <= 1'b0;
+      zc_to                      <= 1'b0;
+    end
+    else begin
       we2    <= we1; // used for edge detect
       rd2    <= rd1; // used for edge detect
 
-      if (rd1 && ~rd2) begin  // capture on rising edge of read
-        dout <= cnt;
+      if (rd1 && !rd2) begin  // capture on rising edge of read
+        dout <= down_counter;
         oe_n <= 1'b0;
       end
       else begin
@@ -121,53 +121,52 @@ module ctc_core #(
         oe_n <= 1'b1;
       end
 
-      if (ctrl_wstb && din[2]) begin
-        tc_next <= 1'b1;
+      if (ccw_wstb && din[2]) begin
+        time_constant_to_follow <= 1'b1;
       end
       else if (tc_wstb) begin
-        tc_next <= 1'b0;
+        time_constant_to_follow <= 1'b0;
       end
 
       if (tc_wstb) begin
-        tc_reg <= din - 1;
+        time_constant_word <= din - 1;
       end
 
-      if (ctrl_wstb) begin
-        ctrl_reg <= din;
+      if (ccw_wstb) begin
+        channel_control_word <= din;
       end
 
       if (vec_wstb) begin
-        vec_reg <= din;
+        interrupt_vector_word <= din;
       end
 
-      tim_tc_start <= tc_wstb && ~ctrl3_auto_trig && ~ctrl6_cnt_mode;
+      trig_on_time_constant_load <= tc_wstb && ccw3_auto_trig && ccw6_tim_mode;
+      ccw4_trig_re2 <=  ccw4_trig_re;
+      clk_trg2      <=  clk_trg;
+      clk_trg_re    <=  clk_trg && !clk_trg2 && trig_re_en;
+      clk_trg_fe    <= !clk_trg &&  clk_trg2 && trig_fe_en;;
+      trigger_pulse <= clk_trg_re || clk_trg_fe || trig_on_time_constant_load || sw_trig;
 
-      ctrl4_trig_re2 <=  ctrl4_trig_re;
-      clk_trig2      <=  clk_trig;
-      clk_trig_re    <=  clk_trig && ~clk_trig2 && trig_re_en;
-      clk_trig_fe    <= ~clk_trig &&  clk_trig2 && trig_fe_en;;
-      trig <= clk_trig_re  || clk_trig_fe  || tim_tc_start || sw_trig;
-
-      if (ctrl1_sw_rst) begin
+      if (ccw1_sw_rst) begin
         triggered <= 1'b0;
       end
-      else if (trig) begin
+      else if (trigger_pulse) begin
         triggered <= 1'b1;
       end
 
-      if (ctrl6_tim_mode && triggered) begin
-        cnt_prescale <= (cnt_prescale==8'h0) ? prescale_val : cnt_prescale - 1;
-        if (cnt_prescale==8'h0) begin
-          cnt <= (cnt=='h0) ? tc_reg : cnt - 1; 
+      if (ccw6_tim_mode && triggered) begin
+        prescaler_counter <= (prescaler_counter==8'h0) ? prescaler_factor : prescaler_counter - 1;
+        if (prescaler_counter==8'h0) begin
+          down_counter <= (down_counter=='h0) ? time_constant_word : down_counter - 1;
         end
       end
       else begin
-        cnt_prescale <= 'h0;
-        cnt <= 'h0;
+        prescaler_counter <= 'h0;
+        down_counter <= 'h0;
       end
-      
-      zc_to <= triggered && cnt=='h0;
-      
+
+      zc_to <= triggered && down_counter=='h0;
+
     end
   end
 endmodule

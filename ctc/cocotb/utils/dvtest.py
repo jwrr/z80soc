@@ -15,7 +15,7 @@ class DVTest:
         self.err_max = err_max
         self.err_cnt = 0
         self.tot_cnt = 0
-
+        self.info(self.name)
 
     def convert_actual_to_int(self, act):
         binstr = ""
