@@ -125,12 +125,21 @@ async def run_test(dut):
             await z80write(dut, 0x1, i)
 
         for i in range(100):
-            await ClockCycles(dut.clk,100)
+            await ClockCycles(dut.clk, 100)
             rdata = await z80read(dut, 0x1)
             print("cnt = {}".format(rdata))
+        
+        await z80write(dut, 0x1, 0x03) # reset
+        await z80write(dut, 0x1, 0x0d) # control word, ext trigger
+        await z80write(dut, 0x1, 0x80) # time constant
+        await ClockCycles(dut.clk, 100)
+        await z80write(dut, 0x1, 0x19) # control word
+        await ClockCycles(dut.clk, 1000)
+        
+        
         dv.done()
             
-    await ClockCycles(dut.clk,100)
+    await ClockCycles(dut.clk, 100)
 
 # Register the test.
 factory = TestFactory(run_test)

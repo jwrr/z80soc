@@ -43,17 +43,21 @@ module ctc_core #(
   reg                   ieo;
   reg                   int_n;
 
+  wire                  ccw_wstb;
   reg        [DWID-1:0] channel_control_word;
-  wire                  ccw1_sw_rst      =  channel_control_word[1];
-  wire                  ccw3_auto_trig   = !channel_control_word[3];
-  wire                  ccw3_ext_trig    =  channel_control_word[3];
-  wire                  ccw4_trig_fe     = !channel_control_word[4];
-  wire                  ccw4_trig_re     =  channel_control_word[4];
-  wire                  ccw5_prescale16  = !channel_control_word[5]; // timer mode only
-  wire                  ccw5_prescale256 =  channel_control_word[5]; // timer mode only
-  wire                  ccw6_tim_mode    = !channel_control_word[6];
-  wire                  ccw6_cnt_mode    =  channel_control_word[6];
-  wire                  ccw7_int_en      =  channel_control_word[7];
+  wire                  select_vector_reg  = !din[0] && wstb;
+  wire                  select_control_reg =  din[0] && wstb;
+  wire                  ccw1_sw_reset      =  din[1] && ccw_wstb;
+  wire                  time_constant_to_follow = din[2] && ccw_wstb;
+  wire                  ccw3_auto_trig     = !channel_control_word[3];
+  wire                  ccw3_ext_trig      =  channel_control_word[3];
+  wire                  ccw4_trig_fe       = !channel_control_word[4]; // also sw trigger
+  wire                  ccw4_trig_re       =  channel_control_word[4]; // also sw trigger
+  wire                  ccw5_prescale16    = !channel_control_word[5]; // timer mode only
+  wire                  ccw5_prescale256   =  channel_control_word[5]; // timer mode only
+  wire                  ccw6_tim_mode      = !channel_control_word[6];
+  wire                  ccw6_cnt_mode      =  channel_control_word[6];
+  wire                  ccw7_int_en        =  channel_control_word[7];
 
   wire            [7:0] prescaler_factor = ccw5_prescale16 ? 8'h0F : 8'hFF;
 
@@ -68,10 +72,10 @@ module ctc_core #(
   wire                  we1 = cs && rd_n && !iorq_n && !ce_n && m1_n;
   reg                   we2;
   wire                  wstb = we1 && !we2;
-  reg                   time_constant_to_follow;
-  wire                  tc_wstb  = wstb && time_constant_to_follow;
-  wire                  ccw_wstb = wstb && din[0] && !time_constant_to_follow;
-  wire                  vec_wstb = wstb && !din[0] && !time_constant_to_follow;
+  reg                   time_constant_to_follow2;
+  wire                  tc_wstb  = wstb && time_constant_to_follow2;
+  assign                ccw_wstb = wstb && select_control_reg && !time_constant_to_follow2;
+  wire                  vec_wstb = wstb && select_vector_reg && !time_constant_to_follow2;
   reg                   trig_on_time_constant_load;
 
   wire                  rd1 = cs && !rd_n && !iorq_n && !ce_n && m1_n;
@@ -93,7 +97,7 @@ module ctc_core #(
       dout                       <= 'h0;
       channel_control_word       <= 'h0;
       time_constant_word         <= 'h0;
-      time_constant_to_follow    <= 1'b0;
+      time_constant_to_follow2   <= 1'b0;
       oe_n                       <= 1'b1;
       ieo                        <= 1'b0;
       int_n                      <= 1'b0;
@@ -121,11 +125,11 @@ module ctc_core #(
         oe_n <= 1'b1;
       end
 
-      if (ccw_wstb && din[2]) begin
-        time_constant_to_follow <= 1'b1;
+      if (ccw_wstb && time_constant_to_follow) begin
+        time_constant_to_follow2 <= 1'b1;
       end
       else if (tc_wstb) begin
-        time_constant_to_follow <= 1'b0;
+        time_constant_to_follow2 <= 1'b0;
       end
 
       if (tc_wstb) begin
@@ -147,7 +151,7 @@ module ctc_core #(
       clk_trg_fe    <= !clk_trg &&  clk_trg2 && trig_fe_en;;
       trigger_pulse <= clk_trg_re || clk_trg_fe || trig_on_time_constant_load || sw_trig;
 
-      if (ccw1_sw_rst) begin
+      if (ccw1_sw_reset) begin
         triggered <= 1'b0;
       end
       else if (trigger_pulse) begin
