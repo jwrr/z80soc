@@ -47,7 +47,8 @@ module ctc_core #(
   reg        [DWID-1:0] channel_control_word;
   wire                  select_vector_reg  = !din[0] && wstb;
   wire                  select_control_reg =  din[0] && wstb;
-  wire                  ccw1_sw_reset      =  din[1] && ccw_wstb;
+  wire                  ccw1_sw_reset      =  channel_control_word[1];
+//   wire                ccw1_sw_reset      =  din[1] && ccw_wstb;
   wire                  time_constant_to_follow = din[2] && ccw_wstb;
   wire                  ccw3_auto_trig     = !channel_control_word[3];
   wire                  ccw3_ext_trig      =  channel_control_word[3];
@@ -82,10 +83,10 @@ module ctc_core #(
   reg                   rd2;
 
   reg                   ccw4_trig_re2;
-  wire                  sw_trig = ccw4_trig_re != ccw4_trig_re2;
+  wire                  sw_trig = ccw4_trig_re != ccw4_trig_re2 && !ccw1_sw_reset;
 
-  wire                  trig_re_en = ccw3_ext_trig && ccw4_trig_re;
-  wire                  trig_fe_en = ccw3_ext_trig && ccw4_trig_fe;
+  wire                  trig_re_en = ccw3_ext_trig && ccw4_trig_re && !ccw1_sw_reset;
+  wire                  trig_fe_en = ccw3_ext_trig && ccw4_trig_fe && !ccw1_sw_reset;
   reg                   trigger_pulse;
   reg                   triggered;
   reg                   zc_to;
