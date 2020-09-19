@@ -38,69 +38,78 @@ module ctc_core #(
   output                zc_to
 );
 
-  reg        [DWID-1:0] dout;
-  reg                   oe_n;
-  reg                   ieo;
-  reg                   int_n;
+  reg    [DWID-1:0] dout;
+  reg               oe_n;
+  reg               ieo;
+  reg               int_n;
 
-  wire                  ccw_wstb;
-  reg        [DWID-1:0] channel_control_word;
-  wire                  select_vector_reg  = !din[0] && wstb;
-  wire                  select_control_reg =  din[0] && wstb;
-  wire                  bit1_sw_reset      =  channel_control_word[1];
-  wire                  time_constant_to_follow = din[2] && ccw_wstb;
-  wire                  bit3_auto_trig     = !channel_control_word[3]; // timer mode only
-  wire                  bit3_ext_trig      =  channel_control_word[3]; // timer mode only
-  wire                  bit4_trig_fe       = !channel_control_word[4]; // also sw trigger
-  wire                  bit4_trig_re       =  channel_control_word[4]; // also sw trigger
-  wire                  bit5_prescale16    = !channel_control_word[5]; // timer mode only
-  wire                  bit5_prescale256   =  channel_control_word[5]; // timer mode only
-  wire                  bit6_tim_mode      = !channel_control_word[6];
-  wire                  bit6_cnt_mode      =  channel_control_word[6];
-  wire                  bit7_int_en        =  channel_control_word[7];
+  wire              ccw_wstb;
+  reg    [DWID-1:0] channel_control_word;
+  wire              select_vector_reg  = !din[0] && wstb;
+  wire              select_control_reg =  din[0] && wstb;
+  wire              bit1_sw_reset      =  channel_control_word[1];
+  wire              time_constant_to_follow = din[2] && ccw_wstb;
+  wire              bit3_auto_trig     = !channel_control_word[3]; // timer mode only
+  wire              bit3_ext_trig      =  channel_control_word[3]; // timer mode only
+  wire              bit4_trig_fe       = !channel_control_word[4]; // also sw trigger
+  wire              bit4_trig_re       =  channel_control_word[4]; // also sw trigger
+  wire              bit5_prescale16    = !channel_control_word[5]; // timer mode only
+  wire              bit5_prescale256   =  channel_control_word[5]; // timer mode only
+  wire              bit6_tim_mode      = !channel_control_word[6];
+  wire              bit6_cnt_mode      =  channel_control_word[6];
+  wire              bit7_int_enable    =  channel_control_word[7];
 
-  wire            [7:0] prescaler_factor = bit5_prescale16 ? 8'h0F : 8'hFF;
+  wire        [7:0] prescaler_factor = bit5_prescale16 ? 8'h0F : 8'hFF;
 
-  reg        [DWID-1:0] time_constant_word;
-  reg        [DWID-1:0] down_counter;
-  reg             [7:0] prescaler_counter;
-  reg        [DWID-1:0] interrupt_vector_word;
-  reg                   clk_trg2;
-  reg                   clk_trg_re;
-  reg                   clk_trg_fe;
+  reg    [DWID-1:0] time_constant_word;
+  reg    [DWID-1:0] down_counter;
+  reg         [7:0] prescaler_counter;
+  reg    [DWID-1:0] interrupt_vector_word;
+  reg               clk_trg2;
+  reg               clk_trg_re;
+  reg               clk_trg_fe;
 
-  wire                  we1 = cs && rd_n && !iorq_n && !ce_n && m1_n;
-  reg                   we2;
-  wire                  wstb = we1 && !we2;
-  reg                   time_constant_to_follow2;
-  wire                  tc_wstb  = wstb && time_constant_to_follow2;
-  assign                ccw_wstb = wstb && select_control_reg && !time_constant_to_follow2;
-  wire                  vec_wstb = wstb && select_vector_reg && !time_constant_to_follow2;
-  reg                   trig_on_time_constant_load;
+  wire              we1 = cs && rd_n && !iorq_n && !ce_n && m1_n;
+  reg               we2;
+  wire              wstb = we1 && !we2;
+  reg               time_constant_to_follow2;
+  wire              tc_wstb  = wstb && time_constant_to_follow2;
+  assign            ccw_wstb = wstb && select_control_reg && !time_constant_to_follow2;
+  wire              vec_wstb = wstb && select_vector_reg && !time_constant_to_follow2;
+  reg               trig_on_time_constant_load;
 
-  wire                  rd1 = cs && !rd_n && !iorq_n && !ce_n && m1_n;
-  reg                   rd2;
+  wire              read_counter1 = cs && !rd_n && !iorq_n && !ce_n && m1_n;
+  reg               read_counter2;
+  wire              read_counter_pulse = read_counter1 && !read_counter2;
 
-  reg                   bit4_trig_re2;
-  wire                  sw_trig = bit4_trig_re != bit4_trig_re2 && !bit1_sw_reset;
+  wire              read_int_vector1 = cs && !rd_n && !iorq_n && !ce_n && !m1_n;
+  reg               read_int_vector2;
+  wire              read_int_vector_pulse = read_int_vector1 && !read_int_vector2;
 
-  wire                  trig_re_en = (bit6_cnt_mode || bit3_ext_trig) && bit4_trig_re && !bit1_sw_reset;
-  wire                  trig_fe_en = (bit6_cnt_mode || bit3_ext_trig) && bit4_trig_fe && !bit1_sw_reset;
-  reg                   trigger_pulse;
-  reg                   active;
-  reg                   zc_to;
+  reg               bit4_trig_re2;
+  wire              sw_trig = bit4_trig_re != bit4_trig_re2 && !bit1_sw_reset;
+
+  wire              trig_re_en = (bit6_cnt_mode || bit3_ext_trig) && bit4_trig_re && !bit1_sw_reset;
+  wire              trig_fe_en = (bit6_cnt_mode || bit3_ext_trig) && bit4_trig_fe && !bit1_sw_reset;
+  reg               trigger_pulse;
+  reg               active;
+  reg               zc_to;
+  reg               zc_to2;
+  wire              zc_to_pulse = zc_to && !zc_to2;
 
   always @(posedge clk or negedge reset_n) begin
     if (!reset_n) begin
       we2                        <= 1'b0;
-      rd2                        <= 1'b0;
+      read_counter2              <= 1'b0;
+      read_int_vector2           <= 1'b0;
       dout                       <= 'h0;
       channel_control_word       <= 'h0;
       time_constant_word         <= 'h0;
       time_constant_to_follow2   <= 1'b0;
+      interrupt_vector_word      <= 'h0;
       oe_n                       <= 1'b1;
       ieo                        <= 1'b0;
-      int_n                      <= 1'b0;
+      int_n                      <= 1'b1;
       clk_trg2                   <= 1'b0;
       clk_trg_re                 <= 1'b0;
       clk_trg_fe                 <= 1'b0;
@@ -111,13 +120,19 @@ module ctc_core #(
       active                     <= 1'b0;
       bit4_trig_re2              <= 1'b0;
       zc_to                      <= 1'b0;
+      zc_to2                     <= 1'b0;
     end
     else begin
       we2    <= we1; // used for edge detect
-      rd2    <= rd1; // used for edge detect
+      read_counter2 <= read_counter1; // used for edge detect
+      read_int_vector2 <= read_int_vector1; // used for edge detect
 
-      if (rd1 && !rd2) begin  // capture on rising edge of read
+      if (read_counter_pulse) begin
         dout <= down_counter;
+        oe_n <= 1'b0;
+      end
+      else if (read_int_vector_pulse) begin
+        dout <= interrupt_vector_word;
         oe_n <= 1'b0;
       end
       else begin
@@ -171,11 +186,19 @@ module ctc_core #(
       end
       else begin // bit6_cnt_mode
         if (trigger_pulse) begin
-          down_counter <= (down_counter=='h0) ? time_constant_word : down_counter - 1; 
+          down_counter <= (down_counter=='h0) ? time_constant_word : down_counter - 1;
         end
       end
 
       zc_to <= active && down_counter=='h0;
+      zc_to2 <= zc_to;
+
+      if (zc_to_pulse) begin
+        int_n <= 1'b0;
+      end
+      else if (read_int_vector_pulse && bit7_int_enable) begin
+        int_n <= 1'b1;
+      end
 
     end
   end

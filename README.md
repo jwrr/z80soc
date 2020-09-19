@@ -6,6 +6,8 @@ z80 + ctc + dma + pio + sio
 
 **NOTHING WORKS. DO NOT USE.**
 
+* CTC is timer and counter pass basic simulation tests. Interrupts are not implemented yet.
+
 ## Description
 
 This project attempts to recreate the periperals defined in the
@@ -20,7 +22,7 @@ Parallel Input/Output (PIO), and Serial Input/Output (SIO).
 * [Howto Program the Z80 CTC](http://www.blunk-electronic.de/train-z/pdf/howto_program_the_Z80-CTC.pdf)
 * [Smithonian Chips - Product Evaluation of the Zilog Z80 CTC](http://smithsonianchips.si.edu/ice/OCR_ScanPE125/PE125(10379-K).pdf)
 * [Let's Add a Z80 CTC](https://www.leonardomiliani.com/en/2019/english-lm80c-lets-add-a-z80-ctc/)
-* [Z80 Family Product Specifications Handbook Feb 1984](ftp://bitsavers.informatik.uni-stuttgart.de/components/zilog/z80/Z80_Family_Product_Specifications_Handbook_Feb84.pdf)
+* [Z80 Family Product Specifications Handbook Feb 1984](http://www.bitsavers.org/components/zilog/z80/Z80_Family_Product_Specifications_Handbook_Feb84.pdf)
 * [Bitsavers - Many Z80 Books](http://bitsavers.org/components/zilog/z80/)
 
 
