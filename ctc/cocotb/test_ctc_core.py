@@ -47,7 +47,7 @@ from cocotb.scoreboard import Scoreboard
 #   output                zc_to
 
 
-async def z80write(dut, addr, wdata):
+async def ctc_write(dut, addr, wdata):
     await RisingEdge(dut.clk)
     dut.rd_n = 1
     dut.m1_n = 1
@@ -67,7 +67,7 @@ async def z80write(dut, addr, wdata):
     await RisingEdge(dut.clk)
 
 
-async def z80read(dut, addr):
+async def ctc_read(dut, addr):
     await RisingEdge(dut.clk)
     dut.rd_n = 1
     dut.m1_n = 1
@@ -90,30 +90,9 @@ async def z80read(dut, addr):
     return rdata
 
 
-async def timer_reset(dv, din):
+async def ctc_hw_reset(dv):
     dut = dv.dut
-    dv.info("Reset Timer")
-    await z80write(dut, 0x1, din | 0x03)
-
-async def timer_poll(dv, nn, din, msg):
-    dut = dv.dut
-    dv.info(msg)
-    dut.din = din
-    for i in range(nn):
-        await ClockCycles(dut.clk, 100)
-        rdata = await z80read(dut, 0x1)
-        dv.info("Read Timer - cnt = {}".format(rdata))
-
-#### @cocotb.test()
-async def run_test(dut):
-
-    en_reg_rw_test = True
-
-    clk = Clock(dut.clk, 10, units="ns")  # Create a 10us period clock on port clk
-    cocotb.fork(clk.start())  # Start the clock
-
     dut.reset_n = 0
-
     dut.ce_n = 1
     dut.m1_n = 1
     dut.rd_n = 1
@@ -121,68 +100,188 @@ async def run_test(dut):
     dut.din = 0
     dut.iei = 0
     dut.clk_trg = 0
-
     await ClockCycles(dut.clk,100)
-
     dut.reset_n = 1
-
     await ClockCycles(dut.clk,100)
 
-    ### =============================================================================================================
-    ### Register RW TEST
 
-    if en_reg_rw_test:
-        dv = DVTest(dut, "CTC TIMER TEST", msg_lvl="All")
+async def ctc_sw_reset(dv, din):
+    dut = dv.dut
+    dv.dbg("    " + "Reset Timer")
+    await ctc_write(dut, 0x1, din | 0x03)
 
-        # Verify auto trigger (trig immediately after the time const is loaded)
-        dv.info("Test auto trigger")
-        for i in range(1, 101, 10):
-            await z80write(dut, 0x1, 0x05)
-            await z80write(dut, 0x1, i)
-        await timer_poll(dv, 20, 0x88, "After Loading Time Constant - Timer should decrement (din=0x88)")
 
-        # Reset timer, Configure it to start on with sw edge change 
-        dv.info("Test software trigger")
-        await timer_reset(dv, 0x03)
-        await timer_poll(dv, 5, 0x97, "After Reset - Timer should NOT decrement (din=0x98)")
-        await z80write(dut, 0x1, 0x0d) # control word, ext trigger
-        await z80write(dut, 0x1, 0x80) # time constant
-        await timer_poll(dv, 5, 0x98, "After loading Time Constant but before Software Trigger - Timer should NOT decrement (din=0x98)")
-        await z80write(dut, 0x1, 0x19) # control word
-        await timer_poll(dv, 5, 0x99, "After Software Trigger - Timer should decrement (din=0x99)")
+async def ctc_poll(dv, nn, din, exp, msg):
+    dut = dv.dut
+    dv.info("    " + msg)
+    dut.din = din
+    prev = 257
+    for i in range(nn):
+        await ClockCycles(dut.clk, 100)
+        rdata = await ctc_read(dut, 0x1)
+        if exp == 0:
+            dv.eq(rdata, 0, "Timer should be off")
+        else:
+            dv.neq(rdata, prev, "Timer should be decrementing")
+        prev = rdata
 
-        # Verify falling edge external trigger
-        dv.info("Test falling edge trigger")
-        await timer_reset(dv,0x0B)
-        await timer_poll(dv, 5, 0xAA, "After Reset - The timer should stay 0 (din=0xAA)")
-        await z80write(dut, 0x1, 0x0d) # control word, ext trigger
-        await z80write(dut, 0x1, 0x20) # time constant
-        await timer_poll(dv, 5, 0xBB, "Before External Trigger - The timer should NOT decrement (din=0xBB)")
+# =============================================================================
+# =============================================================================
 
-        dut.clk_trg = 1
-        await timer_poll(dv, 5, 0xCC, "After Rising Edge - The timer should NOT trigger (din=0xCC)")
-        
-        dut.clk_trg = 0
-        await timer_poll(dv, 5, 0xDD, "After Falling Edge - The timer should  trigger (din=0xDD)")
-        
-        # Verify rising edge external trigger
-        dv.info("Test rising edge trigger")
-        await timer_reset(dv,0x1B)
-        await timer_poll(dv, 5, 0xE0, "After Reset - The timer should stay 0 (din=0xE0)")
-        await z80write(dut, 0x1, 0x1d) # control word, ext trigger
-        await z80write(dut, 0x1, 0x20) # time constant
-        await timer_poll(dv, 5, 0xE1, "Before External Trigger - The timer should NOT decrement (din=0xE1)")
+### ===========================================================================
+### CTC TIMER TEST
 
-        dut.clk_trg = 1
-        await timer_poll(dv, 5, 0xE2, "After Rising Edge - The timer should trigger (din=0xE2)")
-        
-        
-        dv.done()
+async def run_ctc_timer_test(dut):
+
+    clk = Clock(dut.clk, 10, units="ns")  # Create a 10us period clock on port clk
+    cocotb.fork(clk.start())  # Start the clock
+    await ClockCycles(dut.clk,2)
+
+#   dv = DVTest(dut, "CTC TIMER TEST", msg_lvl="All")
+    dv = DVTest(dut, "CTC TIMER TEST", msg_lvl="Fail")
+
+    await ctc_hw_reset(dv)
+
+    # Verify auto trigger (trig immediately after the time const is loaded)
+    dv.notice("Test auto trigger")
+    for i in range(1, 101, 10):
+        await ctc_write(dut, 0x1, 0x05)
+        await ctc_write(dut, 0x1, i)
+    await ctc_poll(dv, 20, 0x88, -1, "After Loading Time Constant - Timer should decrement (din=0x88)")
+
+    # Reset timer, Configure it to start on with sw edge change 
+    dv.notice("Test software trigger")
+    await ctc_sw_reset(dv, 0x03)
+    await ctc_poll(dv, 5, 0x97, 0, "After Reset - Timer should NOT decrement (din=0x98)")
+    await ctc_write(dut, 0x1, 0x0d) # control word, ext trigger
+    await ctc_write(dut, 0x1, 0x80) # time constant
+    await ctc_poll(dv, 5, 0x98, 0, "After loading Time Constant but before Software Trigger - Timer should NOT decrement (din=0x98)")
+    await ctc_write(dut, 0x1, 0x19) # control word
+    await ctc_poll(dv, 5, 0x99, -1, "After Software Trigger - Timer should decrement (din=0x99)")
+
+    # Verify falling edge external trigger
+    dv.notice("Test falling edge trigger")
+    await ctc_sw_reset(dv,0x0B)
+    await ctc_poll(dv, 5, 0xAA, 0, "After Reset - The timer should stay 0 (din=0xAA)")
+    await ctc_write(dut, 0x1, 0x0d) # control word, ext trigger
+    await ctc_write(dut, 0x1, 0x20) # time constant
+    await ctc_poll(dv, 5, 0xBB, 0, "Before External Trigger - The timer should NOT decrement (din=0xBB)")
+
+    dut.clk_trg = 1
+    await ctc_poll(dv, 5, 0xCC, 0, "After Rising Edge - The timer should NOT trigger (din=0xCC)")
+    
+    dut.clk_trg = 0
+    await ctc_poll(dv, 5, 0xDD, -1, "After Falling Edge - The timer should  trigger (din=0xDD)")
+    
+    # Verify rising edge external trigger
+    dv.notice("Test rising edge trigger")
+    await ctc_sw_reset(dv,0x1B)
+    await ctc_poll(dv, 5, 0xE0, 0, "After Reset - The timer should stay 0 (din=0xE0)")
+    await ctc_write(dut, 0x1, 0x1d) # control word, ext trigger
+    await ctc_write(dut, 0x1, 0x20) # time constant
+    await ctc_poll(dv, 5, 0xE1, 0, "Before External Trigger - The timer should NOT decrement (din=0xE1)")
+
+    dut.clk_trg = 1
+    await ctc_poll(dv, 5, 0xE2, -1, "After Rising Edge - The timer should trigger (din=0xE2)")
+
+    dv.done()
+    await ClockCycles(dut.clk, 100)
             
+
+### ===========================================================================
+### CTC COUNTER TEST
+
+async def run_ctc_counter_test(dut):
+    clk = Clock(dut.clk, 10, units="ns")  # Create a 10us period clock on port clk
+    cocotb.fork(clk.start())  # Start the clock
+    await ClockCycles(dut.clk,2)
+
+#     dv = DVTest(dut, "CTC COUNTER TEST", msg_lvl="All")
+    dv = DVTest(dut, "CTC COUNTER TEST", msg_lvl="Fail")
+
+    # -------------------------------------------------------------------------
+    
+    await ctc_hw_reset(dv)
+    dv.notice("Test software trigger")
+    await ctc_sw_reset(dv, 0x73)
+    await ctc_write(dut, 0x1, 0x75) # channel control word
+    await ctc_write(dut, 0x1, 0x10) # time constant
+    await ctc_poll(dv, 5, 0xF0, 0, "After Reset - Counter should NOT decrement (din=0xF0)")
+    
+    exp = 0x10
+    for i in range(100):
+        await ctc_write(dut, 0x1, 0x61) # channel control word
+        cnt = await ctc_read(dut, 0x1)
+        exp = 0xF if exp==0 else exp - 1
+        dv.eq(cnt, exp, "cnt should decrement on software falling edge")
+        await ctc_write(dut, 0x1, 0x71) # channel control word
+        cnt = await ctc_read(dut, 0x1)
+        exp = 0xF if exp==0 else exp - 1
+        dv.eq(cnt, exp, "cnt should decrement on software rising edge")
+
+    # -------------------------------------------------------------------------
+    
+    await ctc_hw_reset(dv)
+    dv.notice("Test Rising Edge trigger")
+    await ctc_sw_reset(dv, 0x73)
+    await ctc_write(dut, 0x1, 0x75) # channel control word
+    await ctc_write(dut, 0x1, 0x10) # time constant
+    await ctc_poll(dv, 5, 0xF0, 0, "After Reset - Counter should NOT decrement (din=0xF0)")
+    
+    exp = 0x0
+    dut.din = 0xF1
+    for i in range(100):
+#       await ctc_write(dut, 0x1, 0x61) # channel control word
+        exp = 0xF if exp==0 else exp - 1
+        dut.clk_trg = 1
+        await RisingEdge(dut.clk)
+        cnt = await ctc_read(dut, 0x1)
+        dv.eq(cnt, exp, "cnt should decrement on clk_trg rising edge")
+        dut.clk_trg = 0
+        await RisingEdge(dut.clk)
+        cnt = await ctc_read(dut, 0x1)
+        dv.eq(cnt, exp, "cnt should NOT decrement on software falling edge")
+        
+    # -------------------------------------------------------------------------
+    
+    await ctc_hw_reset(dv)
+    dv.notice("Test Falling Edge trigger")
+    await ctc_sw_reset(dv, 0x63)
+    await ctc_write(dut, 0x1, 0x65) # channel control word
+    await ctc_write(dut, 0x1, 0x10) # time constant
+    await ctc_poll(dv, 5, 0xF0, 0, "After Reset - Counter should NOT decrement (din=0xF0)")
+    
+    exp = 0x0
+    dut.din = 0xF1
+    for i in range(100):
+        dut.clk_trg = 1
+        await RisingEdge(dut.clk)
+        cnt = await ctc_read(dut, 0x1)
+        dv.eq(cnt, exp, "cnt should NOT decrement on clk_trg rising edge")
+        dut.clk_trg = 0
+        await RisingEdge(dut.clk)
+        exp = 0xF if exp==0 else exp - 1
+        cnt = await ctc_read(dut, 0x1)
+        dv.eq(cnt, exp, "cnt should decrement on software falling edge")
+        
+
+
+    dv.done()
     await ClockCycles(dut.clk, 100)
 
+
+# =============================================================================
+# =============================================================================
+
+enable_ctc_timer_test   = True
+enable_ctc_counter_test = True
+
+async def run_test_suite(dut):
+    if enable_ctc_timer_test:   await run_ctc_timer_test(dut)
+    if enable_ctc_counter_test: await run_ctc_counter_test(dut)
+
 # Register the test.
-factory = TestFactory(run_test)
+factory = TestFactory(run_test_suite)
 factory.generate_tests()
 
 

@@ -64,6 +64,22 @@ class DVTest:
                 self.dut._log.info("pass: act = " + hex(val) + " " + description)
 
 
+    def neq(self, act, exp, description=""):
+        if exp == None:
+            return
+        val = self.convert_actual_to_int(act)
+        self.tot_cnt += 1
+        if exp == val:
+            self.err_cnt += 1
+            if self.msg_lvl >= 2:
+                self.dut._log.error("FAIL: act = " + hex(val)  + " exp != " + hex(exp) + " " + description)
+            if self.err_max > 0 and self.err_cnt >= self.err_max:
+                self.done()
+        else:
+            if self.msg_lvl >= 3:
+                self.dut._log.info("pass: act = " + hex(val)  + " exp != " + hex(exp) + " " + description)
+
+
     def done(self):
         test_pass = (self.err_cnt == 0)
         if self.msg_lvl >= 1:
@@ -76,8 +92,24 @@ class DVTest:
         assert test_pass, msg
 
 
+    def dbg(self, msg):
+        if self.msg_lvl >= 3:
+            self.dut._log.info(msg)
+
+
     def info(self, msg):
-        self.dut._log.info(msg)
+        if self.msg_lvl >= 2:
+            self.dut._log.info(msg)
+
+
+    def notice(self, msg):
+        if self.msg_lvl >= 1:
+            self.dut._log.info(msg)
+
+
+    def important(self, msg):
+        if self.msg_lvl >= 0:
+            self.dut._log.info(msg)
 
 
     def val(self, sig, xval = -1):

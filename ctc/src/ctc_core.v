@@ -47,20 +47,19 @@ module ctc_core #(
   reg        [DWID-1:0] channel_control_word;
   wire                  select_vector_reg  = !din[0] && wstb;
   wire                  select_control_reg =  din[0] && wstb;
-  wire                  ccw1_sw_reset      =  channel_control_word[1];
-//   wire                ccw1_sw_reset      =  din[1] && ccw_wstb;
+  wire                  bit1_sw_reset      =  channel_control_word[1];
   wire                  time_constant_to_follow = din[2] && ccw_wstb;
-  wire                  ccw3_auto_trig     = !channel_control_word[3];
-  wire                  ccw3_ext_trig      =  channel_control_word[3];
-  wire                  ccw4_trig_fe       = !channel_control_word[4]; // also sw trigger
-  wire                  ccw4_trig_re       =  channel_control_word[4]; // also sw trigger
-  wire                  ccw5_prescale16    = !channel_control_word[5]; // timer mode only
-  wire                  ccw5_prescale256   =  channel_control_word[5]; // timer mode only
-  wire                  ccw6_tim_mode      = !channel_control_word[6];
-  wire                  ccw6_cnt_mode      =  channel_control_word[6];
-  wire                  ccw7_int_en        =  channel_control_word[7];
+  wire                  bit3_auto_trig     = !channel_control_word[3]; // timer mode only
+  wire                  bit3_ext_trig      =  channel_control_word[3]; // timer mode only
+  wire                  bit4_trig_fe       = !channel_control_word[4]; // also sw trigger
+  wire                  bit4_trig_re       =  channel_control_word[4]; // also sw trigger
+  wire                  bit5_prescale16    = !channel_control_word[5]; // timer mode only
+  wire                  bit5_prescale256   =  channel_control_word[5]; // timer mode only
+  wire                  bit6_tim_mode      = !channel_control_word[6];
+  wire                  bit6_cnt_mode      =  channel_control_word[6];
+  wire                  bit7_int_en        =  channel_control_word[7];
 
-  wire            [7:0] prescaler_factor = ccw5_prescale16 ? 8'h0F : 8'hFF;
+  wire            [7:0] prescaler_factor = bit5_prescale16 ? 8'h0F : 8'hFF;
 
   reg        [DWID-1:0] time_constant_word;
   reg        [DWID-1:0] down_counter;
@@ -82,13 +81,13 @@ module ctc_core #(
   wire                  rd1 = cs && !rd_n && !iorq_n && !ce_n && m1_n;
   reg                   rd2;
 
-  reg                   ccw4_trig_re2;
-  wire                  sw_trig = ccw4_trig_re != ccw4_trig_re2 && !ccw1_sw_reset;
+  reg                   bit4_trig_re2;
+  wire                  sw_trig = bit4_trig_re != bit4_trig_re2 && !bit1_sw_reset;
 
-  wire                  trig_re_en = ccw3_ext_trig && ccw4_trig_re && !ccw1_sw_reset;
-  wire                  trig_fe_en = ccw3_ext_trig && ccw4_trig_fe && !ccw1_sw_reset;
+  wire                  trig_re_en = (bit6_cnt_mode || bit3_ext_trig) && bit4_trig_re && !bit1_sw_reset;
+  wire                  trig_fe_en = (bit6_cnt_mode || bit3_ext_trig) && bit4_trig_fe && !bit1_sw_reset;
   reg                   trigger_pulse;
-  reg                   triggered;
+  reg                   active;
   reg                   zc_to;
 
   always @(posedge clk or negedge reset_n) begin
@@ -109,8 +108,8 @@ module ctc_core #(
       trigger_pulse              <= 1'b0;
       down_counter               <= 'h0;
       prescaler_counter          <= 8'h0;
-      triggered                  <= 1'b0;
-      ccw4_trig_re2              <= 1'b0;
+      active                     <= 1'b0;
+      bit4_trig_re2              <= 1'b0;
       zc_to                      <= 1'b0;
     end
     else begin
@@ -145,32 +144,38 @@ module ctc_core #(
         interrupt_vector_word <= din;
       end
 
-      trig_on_time_constant_load <= tc_wstb && ccw3_auto_trig && ccw6_tim_mode;
-      ccw4_trig_re2 <=  ccw4_trig_re;
+      trig_on_time_constant_load <= tc_wstb && (bit6_cnt_mode || bit3_auto_trig);
+      bit4_trig_re2 <=  bit4_trig_re;
       clk_trg2      <=  clk_trg;
       clk_trg_re    <=  clk_trg && !clk_trg2 && trig_re_en;
       clk_trg_fe    <= !clk_trg &&  clk_trg2 && trig_fe_en;;
       trigger_pulse <= clk_trg_re || clk_trg_fe || trig_on_time_constant_load || sw_trig;
 
-      if (ccw1_sw_reset) begin
-        triggered <= 1'b0;
+      if (bit1_sw_reset) begin
+        active <= 1'b0;
       end
       else if (trigger_pulse) begin
-        triggered <= 1'b1;
+        active <= 1'b1;
       end
 
-      if (ccw6_tim_mode && triggered) begin
+
+      if (!active) begin
+        prescaler_counter <= 'h0;
+        down_counter <= 'h0;
+      end
+      else if (bit6_tim_mode) begin
         prescaler_counter <= (prescaler_counter==8'h0) ? prescaler_factor : prescaler_counter - 1;
         if (prescaler_counter==8'h0) begin
           down_counter <= (down_counter=='h0) ? time_constant_word : down_counter - 1;
         end
       end
-      else begin
-        prescaler_counter <= 'h0;
-        down_counter <= 'h0;
+      else begin // bit6_cnt_mode
+        if (trigger_pulse) begin
+          down_counter <= (down_counter=='h0) ? time_constant_word : down_counter - 1; 
+        end
       end
 
-      zc_to <= triggered && down_counter=='h0;
+      zc_to <= active && down_counter=='h0;
 
     end
   end
